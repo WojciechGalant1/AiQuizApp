@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 from pathlib import Path
 
 import pdfplumber
+from contextlib import asynccontextmanager
+
+log = logging.getLogger(__name__)
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,7 +22,14 @@ from .models import (
     QuizHistoryItem,
 )
 
-app = FastAPI(title="AI Quiz Generator")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="AI Quiz Generator", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,11 +37,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def startup() -> None:
-    init_db()
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +63,7 @@ def extract_text_from_file(path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 @app.post("/generate-quiz", response_model=GenerateQuizResponse)
-async def generate_quiz(
+def generate_quiz(
     file: UploadFile = File(...),
     num_questions: int = Form(default=5),
 ):
@@ -69,7 +75,7 @@ async def generate_quiz(
         raise HTTPException(400, "Obsługiwane formaty: .txt, .pdf")
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
+        content = file.file.read()
         tmp.write(content)
         tmp_path = Path(tmp.name)
 
@@ -91,6 +97,12 @@ async def generate_quiz(
     if not questions_raw:
         raise HTTPException(500, "AI nie wygenerowało pytań – spróbuj ponownie")
 
+    if len(questions_raw) < num_questions:
+        log.warning(
+            "AI wygenerowało %d/%d poprawnych pytań dla pliku '%s'",
+            len(questions_raw), num_questions, file.filename,
+        )
+
     questions = [QuestionSchema(**q) for q in questions_raw]
     title = f"Quiz: {file.filename}"
 
@@ -108,7 +120,7 @@ async def generate_quiz(
 
 
 @app.post("/check-answers", response_model=CheckAnswersResponse)
-async def check_answers(payload: CheckAnswersRequest):
+def check_answers(payload: CheckAnswersRequest):
     record = get_quiz(payload.quiz_id)
     if not record:
         raise HTTPException(404, "Quiz nie znaleziony")
@@ -148,12 +160,12 @@ async def check_answers(payload: CheckAnswersRequest):
 
 
 @app.get("/quizzes", response_model=list[QuizHistoryItem])
-async def list_quizzes():
+def list_quizzes():
     return get_all_quizzes()
 
 
 @app.get("/quizzes/{quiz_id}")
-async def get_quiz_detail(quiz_id: int):
+def get_quiz_detail(quiz_id: int):
     record = get_quiz(quiz_id)
     if not record:
         raise HTTPException(404, "Quiz nie znaleziony")
@@ -169,7 +181,7 @@ async def get_quiz_detail(quiz_id: int):
 
 
 @app.delete("/quizzes/{quiz_id}")
-async def delete_quiz_endpoint(quiz_id: int):
+def delete_quiz_endpoint(quiz_id: int):
     success = delete_quiz(quiz_id)
     if not success:
         raise HTTPException(404, "Quiz nie znaleziony")

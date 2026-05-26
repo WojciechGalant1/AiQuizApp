@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -9,6 +10,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from groq import Groq, RateLimitError, AuthenticationError, APIError
+from pydantic import ValidationError
+
+from .models import QuestionSchema
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(env_path)
@@ -21,21 +25,16 @@ MAX_RETRIES = 5
 BASE_DELAY = 10  # seconds
 MODEL_NAME = "llama-3.3-70b-versatile"
 
-_client: Groq | None = None
-
-
+@functools.lru_cache(maxsize=1)
 def _get_client() -> Groq:
-    global _client
-    if _client is None:
-        api_key = os.getenv("GROQ_API_KEY", "")
-        if not api_key:
-            raise RuntimeError(
-                "Brak klucza GROQ_API_KEY. "
-                "Ustaw go w pliku .env obok requirements.txt.\n"
-                "Klucz uzyskasz za darmo: https://console.groq.com/keys"
-            )
-        _client = Groq(api_key=api_key)
-    return _client
+    api_key = os.getenv("GROQ_API_KEY", "")
+    if not api_key:
+        raise RuntimeError(
+            "Brak klucza GROQ_API_KEY. "
+            "Ustaw go w pliku .env obok requirements.txt.\n"
+            "Klucz uzyskasz za darmo: https://console.groq.com/keys"
+        )
+    return Groq(api_key=api_key)
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +154,14 @@ def generate_questions(text: str, num_questions: int = 5) -> list[dict]:
         try:
             questions = json.loads(raw)
         except json.JSONDecodeError:
+            log.warning("AI zwróciło niepoprawny JSON dla chunk %d – pomijam", i)
             continue
-        all_questions.extend(questions)
+
+        for raw_q in questions:
+            try:
+                QuestionSchema(**raw_q)
+                all_questions.append(raw_q)
+            except (ValidationError, TypeError):
+                log.warning("Pomijam niepoprawne pytanie z chunk %d: %s", i, raw_q)
 
     return all_questions[:num_questions]
