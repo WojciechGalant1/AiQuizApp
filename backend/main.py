@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 
 from .ai_service import generate_questions
-from .db import get_all_quizzes, get_quiz, init_db, save_quiz, update_score
+from .db import delete_quiz, get_all_quizzes, get_quiz, init_db, save_quiz, update_score
 from .models import (
     CheckAnswersRequest,
     CheckAnswersResponse,
@@ -166,3 +166,11 @@ async def get_quiz_detail(quiz_id: int):
         "total": record.total,
         "created_at": record.created_at.isoformat() if record.created_at else None,
     }
+
+
+@app.delete("/quizzes/{quiz_id}")
+async def delete_quiz_endpoint(quiz_id: int):
+    success = delete_quiz(quiz_id)
+    if not success:
+        raise HTTPException(404, "Quiz nie znaleziony")
+    return {"status": "ok"}

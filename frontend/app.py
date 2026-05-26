@@ -20,6 +20,7 @@ from .quiz_view import QuizView
 from .results_view import ResultsView
 from .upload_view import UploadView
 from .history_view import HistoryView
+from .preview_view import PreviewView
 
 API_BASE = "http://127.0.0.1:8000"
 
@@ -149,6 +150,29 @@ class FetchQuizWorker(QThread):
 
 
 # ---------------------------------------------------------------------------
+# Worker wątek – usuwanie quizu z historii
+# ---------------------------------------------------------------------------
+
+class DeleteQuizWorker(QThread):
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+
+    def __init__(self, quiz_id: int) -> None:
+        super().__init__()
+        self._quiz_id = quiz_id
+
+    def run(self) -> None:
+        try:
+            resp = httpx.delete(f"{API_BASE}/quizzes/{self._quiz_id}", timeout=10.0)
+            if resp.status_code != 200:
+                self.error.emit(f"Błąd: HTTP {resp.status_code}")
+                return
+            self.finished.emit()
+        except Exception as exc:
+            self.error.emit(f"Błąd połączenia: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Główne okno
 # ---------------------------------------------------------------------------
 
@@ -170,14 +194,16 @@ class MainWindow(QMainWindow):
         self._quiz_view = QuizView()
         self._results_view = ResultsView()
         self._history_view = HistoryView()
+        self._preview_view = PreviewView()
 
         self._loading_widget = self._build_loading_widget()
 
-        self._stack.addWidget(self._upload_view)    # 0
+        self._stack.addWidget(self._upload_view)     # 0
         self._stack.addWidget(self._loading_widget)  # 1
         self._stack.addWidget(self._quiz_view)       # 2
         self._stack.addWidget(self._results_view)    # 3
         self._stack.addWidget(self._history_view)    # 4
+        self._stack.addWidget(self._preview_view)    # 5
 
         self._upload_view.quiz_requested.connect(self._on_generate)
         self._upload_view.history_requested.connect(self._on_history_requested)
@@ -186,6 +212,11 @@ class MainWindow(QMainWindow):
         self._history_view.back_requested.connect(self._go_home)
         self._history_view.refresh_requested.connect(self._on_history_requested)
         self._history_view.quiz_selected.connect(self._on_history_quiz_selected)
+        self._history_view.preview_requested.connect(self._on_preview_requested)
+        self._history_view.delete_requested.connect(self._on_delete_requested)
+        self._preview_view.back_requested.connect(self._go_history)
+
+        self._fetch_intent = "solve"  # track what to do with fetched quiz
 
         self._apply_global_style()
 
@@ -247,6 +278,9 @@ class MainWindow(QMainWindow):
     def _go_home(self) -> None:
         self._stack.setCurrentIndex(0)
 
+    def _go_history(self) -> None:
+        self._stack.setCurrentIndex(4)
+
     def _on_history_requested(self) -> None:
         self._loading_label.setText("Pobieranie historii quizów...")
         self._stack.setCurrentIndex(1)
@@ -264,7 +298,15 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Błąd historii", msg)
 
     def _on_history_quiz_selected(self, quiz_id: int) -> None:
-        self._loading_label.setText("Pobieranie quizu...")
+        self._fetch_intent = "solve"
+        self._start_quiz_fetch(quiz_id, "Pobieranie quizu do rozwiązania...")
+
+    def _on_preview_requested(self, quiz_id: int) -> None:
+        self._fetch_intent = "preview"
+        self._start_quiz_fetch(quiz_id, "Pobieranie pytań do podglądu...")
+
+    def _start_quiz_fetch(self, quiz_id: int, loading_msg: str) -> None:
+        self._loading_label.setText(loading_msg)
         self._stack.setCurrentIndex(1)
         self._fetch_quiz_worker = FetchQuizWorker(quiz_id)
         self._fetch_quiz_worker.finished.connect(self._on_fetched_quiz_ready)
@@ -275,12 +317,33 @@ class MainWindow(QMainWindow):
         self._current_title = data.get("title", "Quiz z historii")
         self._current_questions = data.get("questions", [])
         self._current_quiz_id = data.get("id", -1)
-        self._quiz_view.load_quiz(self._current_title, self._current_questions)
-        self._stack.setCurrentIndex(2)
+        
+        if self._fetch_intent == "preview":
+            self._preview_view.load_preview(self._current_title, self._current_questions)
+            self._stack.setCurrentIndex(5)
+        else:
+            self._quiz_view.load_quiz(self._current_title, self._current_questions)
+            self._stack.setCurrentIndex(2)
 
     def _on_fetch_quiz_error(self, msg: str) -> None:
         self._stack.setCurrentIndex(4)
         QMessageBox.critical(self, "Błąd quizu", msg)
+
+    def _on_delete_requested(self, quiz_id: int) -> None:
+        self._loading_label.setText("Usuwanie quizu...")
+        self._stack.setCurrentIndex(1)
+        self._delete_worker = DeleteQuizWorker(quiz_id)
+        self._delete_worker.finished.connect(self._on_delete_finished)
+        self._delete_worker.error.connect(self._on_delete_error)
+        self._delete_worker.start()
+
+    def _on_delete_finished(self) -> None:
+        # Po usunięciu po prostu odświeżamy historię
+        self._on_history_requested()
+
+    def _on_delete_error(self, msg: str) -> None:
+        self._stack.setCurrentIndex(4)
+        QMessageBox.critical(self, "Błąd usuwania", msg)
 
 
 def main() -> None:

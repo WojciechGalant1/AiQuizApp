@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -17,6 +18,8 @@ class HistoryView(QWidget):
     """Widok historii wygenerowanych quizów z możliwością ponownego rozwiązania."""
 
     quiz_selected = pyqtSignal(int)   # emituje quiz_id wybranego quizu
+    preview_requested = pyqtSignal(int) # emituje quiz_id do podglądu
+    delete_requested = pyqtSignal(int) # emituje quiz_id do usunięcia
     back_requested = pyqtSignal()
     refresh_requested = pyqtSignal()
 
@@ -165,16 +168,52 @@ class HistoryView(QWidget):
         score_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         right.addWidget(score_lbl)
 
-        btn = QPushButton("▶  Rozwiąż ponownie")
-        btn.setStyleSheet(
+        btn_solve = QPushButton("▶  Rozwiąż")
+        btn_solve.setStyleSheet(
             "QPushButton { font-size: 13px; font-weight: bold; padding: 8px 18px; "
             "background: #16a34a; color: white; border: none; border-radius: 6px; }"
             "QPushButton:hover { background: #15803d; }"
         )
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_solve.setCursor(Qt.CursorShape.PointingHandCursor)
         quiz_id: int = q.get("id", -1)
-        btn.clicked.connect(lambda _, qid=quiz_id: self.quiz_selected.emit(qid))
-        right.addWidget(btn)
+        btn_solve.clicked.connect(lambda _, qid=quiz_id: self.quiz_selected.emit(qid))
+
+        btn_preview = QPushButton("👁️ Podgląd")
+        btn_preview.setStyleSheet(
+            "QPushButton { font-size: 13px; font-weight: bold; padding: 8px 14px; "
+            "background: #e2e8f0; color: #475569; border: none; border-radius: 6px; }"
+            "QPushButton:hover { background: #cbd5e1; }"
+        )
+        btn_preview.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_preview.clicked.connect(lambda _, qid=quiz_id: self.preview_requested.emit(qid))
+
+        btn_delete = QPushButton("🗑️")
+        btn_delete.setToolTip("Usuń quiz")
+        btn_delete.setStyleSheet(
+            "QPushButton { font-size: 14px; padding: 7px 12px; "
+            "background: #fee2e2; color: #dc2626; border: none; border-radius: 6px; }"
+            "QPushButton:hover { background: #fecaca; }"
+        )
+        btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_delete.clicked.connect(lambda _, qid=quiz_id: self._confirm_delete(qid))
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.addWidget(btn_solve)
+        btn_row.addWidget(btn_preview)
+        btn_row.addWidget(btn_delete)
+
+        right.addLayout(btn_row)
 
         layout.addLayout(right)
         return card
+
+    def _confirm_delete(self, quiz_id: int) -> None:
+        ans = QMessageBox.question(
+            self,
+            "Potwierdzenie",
+            "Czy na pewno chcesz usunąć ten quiz z historii?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            self.delete_requested.emit(quiz_id)

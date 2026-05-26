@@ -63,3 +63,13 @@ def get_all_quizzes() -> list[QuizRecord]:
         records = list(session.query(QuizRecord).order_by(QuizRecord.created_at.desc()).all())
         session.expunge_all()
         return records
+
+
+def delete_quiz(quiz_id: int) -> bool:
+    with get_session() as session:
+        record = session.get(QuizRecord, quiz_id)
+        if record:
+            session.delete(record)
+            session.commit()
+            return True
+        return False
