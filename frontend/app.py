@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -66,6 +65,47 @@ class GenerateWorker(QThread):
 
 
 # ---------------------------------------------------------------------------
+# Worker wątek – sprawdzanie odpowiedzi przez backend
+# ---------------------------------------------------------------------------
+
+class CheckAnswersWorker(QThread):
+    finished = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def __init__(self, quiz_id: int, answers: list[dict]) -> None:
+        super().__init__()
+        self._quiz_id = quiz_id
+        self._answers = answers
+
+    def run(self) -> None:
+        try:
+            payload = {
+                "quiz_id": self._quiz_id,
+                "answers": self._answers,
+            }
+            resp = httpx.post(
+                f"{API_BASE}/check-answers",
+                json=payload,
+                timeout=30.0,
+            )
+            if resp.status_code != 200:
+                try:
+                    detail = resp.json().get("detail", resp.text)
+                except Exception:
+                    detail = resp.text or f"HTTP {resp.status_code}"
+                self.error.emit(f"Błąd serwera: {detail}")
+                return
+            self.finished.emit(resp.json())
+        except httpx.ConnectError:
+            self.error.emit(
+                "Nie można połączyć się z serwerem.\n"
+                "Upewnij się, że backend działa (uvicorn)."
+            )
+        except Exception as exc:
+            self.error.emit(f"Błąd: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Główne okno
 # ---------------------------------------------------------------------------
 
@@ -78,6 +118,7 @@ class MainWindow(QMainWindow):
 
         self._current_questions: list[dict] = []
         self._current_title: str = ""
+        self._current_quiz_id: int = -1
 
         self._stack = QStackedWidget()
         self.setCentralWidget(self._stack)
@@ -88,10 +129,10 @@ class MainWindow(QMainWindow):
 
         self._loading_widget = self._build_loading_widget()
 
-        self._stack.addWidget(self._upload_view)   # 0
-        self._stack.addWidget(self._loading_widget) # 1
-        self._stack.addWidget(self._quiz_view)      # 2
-        self._stack.addWidget(self._results_view)   # 3
+        self._stack.addWidget(self._upload_view)    # 0
+        self._stack.addWidget(self._loading_widget)  # 1
+        self._stack.addWidget(self._quiz_view)       # 2
+        self._stack.addWidget(self._results_view)    # 3
 
         self._upload_view.quiz_requested.connect(self._on_generate)
         self._quiz_view.quiz_finished.connect(self._on_quiz_finished)
@@ -99,15 +140,14 @@ class MainWindow(QMainWindow):
 
         self._apply_global_style()
 
-    @staticmethod
-    def _build_loading_widget() -> QWidget:
+    def _build_loading_widget(self) -> QWidget:
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl = QLabel("Generowanie quizu...\nTo może potrwać kilkanaście sekund.")
-        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setStyleSheet("font-size: 16px; color: #64748b;")
-        layout.addWidget(lbl)
+        self._loading_label = QLabel("Generowanie quizu...\nTo może potrwać kilkanaście sekund.")
+        self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._loading_label.setStyleSheet("font-size: 16px; color: #64748b;")
+        layout.addWidget(self._loading_label)
         return w
 
     def _apply_global_style(self) -> None:
@@ -119,6 +159,7 @@ class MainWindow(QMainWindow):
     # -- flow --
 
     def _on_generate(self, file_path: str, num_questions: int) -> None:
+        self._loading_label.setText("Generowanie quizu...\nTo może potrwać kilkanaście sekund.")
         self._stack.setCurrentIndex(1)
         self._worker = GenerateWorker(file_path, num_questions)
         self._worker.finished.connect(self._on_quiz_ready)
@@ -128,6 +169,7 @@ class MainWindow(QMainWindow):
     def _on_quiz_ready(self, data: dict) -> None:
         self._current_title = data.get("title", "Quiz")
         self._current_questions = data.get("questions", [])
+        self._current_quiz_id = data.get("quiz_id", -1)
         self._quiz_view.load_quiz(self._current_title, self._current_questions)
         self._stack.setCurrentIndex(2)
 
@@ -135,9 +177,23 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(0)
         QMessageBox.critical(self, "Błąd", msg)
 
-    def _on_quiz_finished(self, score: int, total: int, details: list) -> None:
-        self._results_view.show_results(score, total, details)
+    def _on_quiz_finished(self, answers: list) -> None:
+        self._loading_label.setText("Sprawdzanie odpowiedzi...")
+        self._stack.setCurrentIndex(1)
+        self._check_worker = CheckAnswersWorker(self._current_quiz_id, answers)
+        self._check_worker.finished.connect(self._on_answers_checked)
+        self._check_worker.error.connect(self._on_check_error)
+        self._check_worker.start()
+
+    def _on_answers_checked(self, data: dict) -> None:
+        self._results_view.show_results(
+            data["score"], data["total"], data["details"]
+        )
         self._stack.setCurrentIndex(3)
+
+    def _on_check_error(self, msg: str) -> None:
+        self._stack.setCurrentIndex(2)  # wróć do quizu
+        QMessageBox.critical(self, "Błąd sprawdzania odpowiedzi", msg)
 
     def _go_home(self) -> None:
         self._stack.setCurrentIndex(0)

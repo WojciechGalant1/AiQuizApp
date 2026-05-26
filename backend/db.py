@@ -12,7 +12,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "quizzes.db"
 
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
 
-SessionLocal = sessionmaker(bind=engine)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def init_db() -> None:
@@ -52,9 +52,14 @@ def update_score(quiz_id: int, score: float, total: int) -> None:
 
 def get_quiz(quiz_id: int) -> QuizRecord | None:
     with get_session() as session:
-        return session.get(QuizRecord, quiz_id)
+        record = session.get(QuizRecord, quiz_id)
+        if record:
+            session.expunge(record)
+        return record
 
 
 def get_all_quizzes() -> list[QuizRecord]:
     with get_session() as session:
-        return list(session.query(QuizRecord).order_by(QuizRecord.created_at.desc()).all())
+        records = list(session.query(QuizRecord).order_by(QuizRecord.created_at.desc()).all())
+        session.expunge_all()
+        return records

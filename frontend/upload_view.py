@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -90,7 +92,7 @@ class UploadView(QWidget):
         )
         if path:
             self._file_path = path
-            short = path.split("/")[-1] if "/" in path else path.split("\\")[-1]
+            short = Path(path).name
             self._file_label.setText(f"Wybrany plik: {short}")
             self._file_label.setStyleSheet(
                 "font-size: 13px; color: #1e293b; padding: 16px; "

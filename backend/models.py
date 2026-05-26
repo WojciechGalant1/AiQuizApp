@@ -46,6 +46,7 @@ class GenerateQuizRequest(BaseModel):
 
 
 class GenerateQuizResponse(BaseModel):
+    quiz_id: int
     title: str
     questions: list[QuestionSchema]
 

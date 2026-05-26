@@ -101,6 +101,7 @@ async def generate_quiz(
     )
 
     return GenerateQuizResponse(
+        quiz_id=quiz_id,
         title=title,
         questions=questions,
     )

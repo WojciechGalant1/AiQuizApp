@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 class QuizView(QWidget):
     """Widok rozwiązywania quizu - wyświetla pytania z odpowiedziami."""
 
-    quiz_finished = pyqtSignal(int, int, list)  # (score, total, details)
+    quiz_finished = pyqtSignal(list)  # list of {question_index, selected}
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -105,24 +105,15 @@ class QuizView(QWidget):
             )
             return
 
-        score = 0
-        details: list[dict] = []
-        for i, (q, g) in enumerate(zip(self._questions, self._groups)):
+        answers: list[dict] = []
+        for i, g in enumerate(self._groups):
             selected_text = g.checkedButton().text()
-            correct_letter = q["correct"]
+            if ")" in selected_text:
+                selected_letter = selected_text.split(")")[0].strip()
+            elif selected_text:
+                selected_letter = selected_text[0]
+            else:
+                selected_letter = ""
+            answers.append({"question_index": i, "selected": selected_letter})
 
-            selected_letter = selected_text.split(")")[0].strip() if ")" in selected_text else selected_text[0]
-            is_correct = selected_letter.upper() == correct_letter.upper()
-            if is_correct:
-                score += 1
-
-            details.append({
-                "question_index": i,
-                "question": q["question"],
-                "selected": selected_letter,
-                "correct": correct_letter,
-                "is_correct": is_correct,
-                "explanation": q.get("explanation", ""),
-            })
-
-        self.quiz_finished.emit(score, len(self._questions), details)
+        self.quiz_finished.emit(answers)
