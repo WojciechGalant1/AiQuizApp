@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 
 class UploadView(QWidget):
     quiz_requested = pyqtSignal(str, int)  # (file_path, num_questions)
+    history_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -23,9 +24,35 @@ class UploadView(QWidget):
         self._init_ui()
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        # --- Pasek górny (Header) ---
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(20, 20, 20, 0)
+        header_layout.addStretch()
+
+        btn_history = QPushButton("📋  Historia quizów")
+        btn_history.setStyleSheet(
+            "QPushButton { font-size: 13px; font-weight: 600; padding: 8px 16px; "
+            "background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; border-radius: 6px; }"
+            "QPushButton:hover { background: #f1f5f9; color: #0f172a; border-color: #cbd5e1; }"
+        )
+        btn_history.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_history.clicked.connect(self.history_requested.emit)
+        header_layout.addWidget(btn_history)
+        
+        outer_layout.addWidget(header)
+
+        # --- Główna zawartość (wyśrodkowana) ---
+        content_container = QWidget()
+        layout = QVBoxLayout(content_container)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(20)
+        layout.setSpacing(24)
+        
+        outer_layout.addWidget(content_container, stretch=1)
 
         title = QLabel("AI Quiz Generator")
         title.setStyleSheet("font-size: 28px; font-weight: bold; color: #2563eb;")

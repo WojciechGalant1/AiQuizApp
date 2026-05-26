@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 from .quiz_view import QuizView
 from .results_view import ResultsView
 from .upload_view import UploadView
+from .history_view import HistoryView
 
 API_BASE = "http://127.0.0.1:8000"
 
@@ -106,6 +107,48 @@ class CheckAnswersWorker(QThread):
 
 
 # ---------------------------------------------------------------------------
+# Worker wątek – pobieranie historii
+# ---------------------------------------------------------------------------
+
+class FetchHistoryWorker(QThread):
+    finished = pyqtSignal(list)
+    error = pyqtSignal(str)
+
+    def run(self) -> None:
+        try:
+            resp = httpx.get(f"{API_BASE}/quizzes", timeout=10.0)
+            if resp.status_code != 200:
+                self.error.emit(f"Błąd: HTTP {resp.status_code}")
+                return
+            self.finished.emit(resp.json())
+        except Exception as exc:
+            self.error.emit(f"Błąd połączenia: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Worker wątek – pobieranie konkretnego quizu z historii
+# ---------------------------------------------------------------------------
+
+class FetchQuizWorker(QThread):
+    finished = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def __init__(self, quiz_id: int) -> None:
+        super().__init__()
+        self._quiz_id = quiz_id
+
+    def run(self) -> None:
+        try:
+            resp = httpx.get(f"{API_BASE}/quizzes/{self._quiz_id}", timeout=10.0)
+            if resp.status_code != 200:
+                self.error.emit(f"Błąd: HTTP {resp.status_code}")
+                return
+            self.finished.emit(resp.json())
+        except Exception as exc:
+            self.error.emit(f"Błąd połączenia: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Główne okno
 # ---------------------------------------------------------------------------
 
@@ -126,6 +169,7 @@ class MainWindow(QMainWindow):
         self._upload_view = UploadView()
         self._quiz_view = QuizView()
         self._results_view = ResultsView()
+        self._history_view = HistoryView()
 
         self._loading_widget = self._build_loading_widget()
 
@@ -133,10 +177,15 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._loading_widget)  # 1
         self._stack.addWidget(self._quiz_view)       # 2
         self._stack.addWidget(self._results_view)    # 3
+        self._stack.addWidget(self._history_view)    # 4
 
         self._upload_view.quiz_requested.connect(self._on_generate)
+        self._upload_view.history_requested.connect(self._on_history_requested)
         self._quiz_view.quiz_finished.connect(self._on_quiz_finished)
         self._results_view.back_to_home.connect(self._go_home)
+        self._history_view.back_requested.connect(self._go_home)
+        self._history_view.refresh_requested.connect(self._on_history_requested)
+        self._history_view.quiz_selected.connect(self._on_history_quiz_selected)
 
         self._apply_global_style()
 
@@ -197,6 +246,41 @@ class MainWindow(QMainWindow):
 
     def _go_home(self) -> None:
         self._stack.setCurrentIndex(0)
+
+    def _on_history_requested(self) -> None:
+        self._loading_label.setText("Pobieranie historii quizów...")
+        self._stack.setCurrentIndex(1)
+        self._history_worker = FetchHistoryWorker()
+        self._history_worker.finished.connect(self._on_history_ready)
+        self._history_worker.error.connect(self._on_history_error)
+        self._history_worker.start()
+
+    def _on_history_ready(self, quizzes: list) -> None:
+        self._history_view.show_quizzes(quizzes)
+        self._stack.setCurrentIndex(4)
+
+    def _on_history_error(self, msg: str) -> None:
+        self._stack.setCurrentIndex(0)
+        QMessageBox.critical(self, "Błąd historii", msg)
+
+    def _on_history_quiz_selected(self, quiz_id: int) -> None:
+        self._loading_label.setText("Pobieranie quizu...")
+        self._stack.setCurrentIndex(1)
+        self._fetch_quiz_worker = FetchQuizWorker(quiz_id)
+        self._fetch_quiz_worker.finished.connect(self._on_fetched_quiz_ready)
+        self._fetch_quiz_worker.error.connect(self._on_fetch_quiz_error)
+        self._fetch_quiz_worker.start()
+
+    def _on_fetched_quiz_ready(self, data: dict) -> None:
+        self._current_title = data.get("title", "Quiz z historii")
+        self._current_questions = data.get("questions", [])
+        self._current_quiz_id = data.get("id", -1)
+        self._quiz_view.load_quiz(self._current_title, self._current_questions)
+        self._stack.setCurrentIndex(2)
+
+    def _on_fetch_quiz_error(self, msg: str) -> None:
+        self._stack.setCurrentIndex(4)
+        QMessageBox.critical(self, "Błąd quizu", msg)
 
 
 def main() -> None:
