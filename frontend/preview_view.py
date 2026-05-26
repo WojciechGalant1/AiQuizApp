@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
+
+from .export_utils import export_to_docx, export_to_pdf, export_to_txt
 
 
 class PreviewView(QWidget):
@@ -18,6 +22,8 @@ class PreviewView(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._current_title: str = ""
+        self._current_questions: list[dict] = []
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -39,6 +45,16 @@ class PreviewView(QWidget):
         )
         header_layout.addWidget(self._title_lbl)
         header_layout.addStretch()
+
+        btn_export = QPushButton("💾 Eksportuj")
+        btn_export.setStyleSheet(
+            "QPushButton { font-size: 13px; font-weight: bold; padding: 7px 16px; "
+            "background: #10b981; color: white; border: none; border-radius: 6px; }"
+            "QPushButton:hover { background: #059669; }"
+        )
+        btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_export.clicked.connect(self._on_export)
+        header_layout.addWidget(btn_export)
 
         btn_back = QPushButton("← Powrót do historii")
         btn_back.setStyleSheet(
@@ -64,6 +80,8 @@ class PreviewView(QWidget):
         outer.addWidget(scroll)
 
     def load_preview(self, title: str, questions: list[dict]) -> None:
+        self._current_title = title
+        self._current_questions = questions
         self._title_lbl.setText(f"👁️ Podgląd: {title}")
 
         while self._content_layout.count():
@@ -121,3 +139,28 @@ class PreviewView(QWidget):
             self._content_layout.addWidget(card)
 
         self._content_layout.addStretch()
+
+    def _on_export(self) -> None:
+        if not self._current_questions:
+            return
+
+        path, fltr = QFileDialog.getSaveFileName(
+            self,
+            "Zapisz quiz",
+            f"{self._current_title}.pdf",
+            "Pliki PDF (*.pdf);;Dokumenty Word (*.docx);;Pliki tekstowe (*.txt)"
+        )
+        if not path:
+            return
+
+        try:
+            if path.endswith(".pdf"):
+                export_to_pdf(self._current_title, self._current_questions, path)
+            elif path.endswith(".docx"):
+                export_to_docx(self._current_title, self._current_questions, path)
+            else:
+                export_to_txt(self._current_title, self._current_questions, path)
+                
+            QMessageBox.information(self, "Sukces", "Pomyślnie wyeksportowano quiz!")
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd eksportu", f"Wystąpił błąd podczas zapisywania pliku:\n{e}")
