@@ -1,7 +1,37 @@
+# Sekrety i konfiguracja lokalna
 .env
+
+# Python
 __pycache__/
-*.pyc
-data/quizzes.db
-.idea/
-.pytest_cache/
+*.py[cod]
+*$py.class
+*.pyo
 .venv/
+venv/
+
+# Testy i pokrycie kodu
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Dane lokalne (baza tworzy się przy starcie)
+data/
+
+# PyInstaller — artefakty budowania
+build/
+dist/
+*.spec.bak
+
+# Logi runtime
+*.log
+AIQuizGenerator.log
+
+# PyInstaller / OS
+*.manifest
+*.spec~

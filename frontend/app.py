@@ -328,7 +328,9 @@ class MainWindow(QMainWindow):
 
 
 def main() -> None:
-    app = QApplication(sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

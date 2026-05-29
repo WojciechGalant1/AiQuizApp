@@ -12,10 +12,10 @@ from dotenv import load_dotenv
 from groq import Groq, RateLimitError, AuthenticationError, APIError
 from pydantic import ValidationError
 
+from paths import get_env_path
 from .models import QuestionSchema
 
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(env_path)
+load_dotenv(get_env_path())
 
 log = logging.getLogger(__name__)
 

@@ -8,11 +8,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from paths import get_data_dir
 from .models import Base, QuizRecord
 
 log = logging.getLogger(__name__)
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "quizzes.db"
+DB_PATH = get_data_dir() / "quizzes.db"
 
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
 

@@ -176,6 +176,43 @@ Testy obejmują warstwę API, bazę danych oraz logikę `ai_service` (z mockowan
 - Plik `.env` nie jest commitowany (patrz `.gitignore`).
 - Baza `data/quizzes.db` tworzy się automatycznie przy pierwszym uruchomieniu backendu.
 
+## Budowanie jednego pliku .exe (Windows)
+
+Aplikacja może działać jako **jeden plik** `AIQuizGenerator.exe`. Backend startuje w tle w tym samym procesie (wątek), a nie jako drugi program.
+
+### Kroki
+
+1. Zainstaluj zależności i PyInstaller (w katalogu `quiz_app`):
+
+```bash
+pip install -r requirements.txt pyinstaller
+```
+
+2. Zbuduj exe (albo uruchom `build_exe.bat`):
+
+```bash
+pyinstaller --noconfirm --clean AIQuizGenerator.spec
+```
+
+3. Plik wynikowy: `dist/AIQuizGenerator.exe`
+
+4. **Obok exe** umieść plik `.env` (nie w środku archiwum):
+
+```env
+GROQ_API_KEY=gsk_twoj-klucz
+```
+
+5. Przy pierwszym uruchomieniu powstanie folder `data/` obok exe z bazą `quizzes.db`.
+
+### Uwagi przy exe
+
+- **Pierwsze uruchomienie** może trwać 1–2 minuty (rozpakowanie ~130 MB) — pojawi się komunikat „Uruchamianie serwera…”.
+- Plik `.env` musi leżeć **w tym samym folderze co `AIQuizGenerator.exe`** (np. `dist\.env`).
+- Przy problemach sprawdź log: `AIQuizGenerator.log` obok exe.
+- Antywirus czasem blokuje nowe pliki exe — dodaj wyjątek, jeśli trzeba.
+- Port **8000** musi być wolny (lokalny serwer API).
+- Do developmentu nadal używaj `run_backend.py` + `run_app.py` w dwóch terminalach.
+
 ## Licencja
 
 Projekt edukacyjny — do użytku w ramach nauki i rozwoju.
