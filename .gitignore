@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 data/quizzes.db
+.idea/
+.pytest_cache/
+.venv/
