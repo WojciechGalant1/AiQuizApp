@@ -40,6 +40,15 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
+# Limity
+# ---------------------------------------------------------------------------
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_PDF_PAGES = 50
+MAX_TEXT_LENGTH = 100_000  # znaków
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -50,6 +59,11 @@ def extract_text_from_file(path: Path) -> str:
     if suffix == ".pdf":
         text_parts: list[str] = []
         with pdfplumber.open(path) as pdf:
+            if len(pdf.pages) > MAX_PDF_PAGES:
+                raise ValueError(
+                    f"Plik PDF ma {len(pdf.pages)} stron (limit: {MAX_PDF_PAGES}). "
+                    "Skróć dokument i spróbuj ponownie."
+                )
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
@@ -76,16 +90,32 @@ def generate_quiz(
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         content = file.file.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                400,
+                f"Plik jest za duży ({len(content) / 1024 / 1024:.1f} MB). "
+                f"Maksymalny rozmiar: {MAX_FILE_SIZE // 1024 // 1024} MB.",
+            )
         tmp.write(content)
         tmp_path = Path(tmp.name)
 
     try:
         text = extract_text_from_file(tmp_path)
+    except ValueError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(400, str(exc))
     finally:
         tmp_path.unlink(missing_ok=True)
 
     if not text.strip():
         raise HTTPException(400, "Nie udało się wyekstrahować tekstu z pliku")
+
+    if len(text) > MAX_TEXT_LENGTH:
+        raise HTTPException(
+            400,
+            f"Wyekstrahowany tekst jest zbyt długi ({len(text):,} znaków). "
+            f"Limit: {MAX_TEXT_LENGTH:,} znaków. Skróć dokument i spróbuj ponownie.",
+        )
 
     try:
         questions_raw = generate_questions(text, num_questions)

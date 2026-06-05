@@ -7,11 +7,15 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
+
+MAX_FILE_SIZE_MB = 10
+MAX_PDF_PAGES = 50
 
 
 class UploadView(QWidget):
@@ -117,16 +121,51 @@ class UploadView(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self, "Wybierz dokument", "", "Dokumenty (*.txt *.pdf)"
         )
-        if path:
-            self._file_path = path
-            short = Path(path).name
-            self._file_label.setText(f"Wybrany plik: {short}")
-            self._file_label.setStyleSheet(
-                "font-size: 13px; color: #1e293b; padding: 16px; "
-                "border: 2px solid #2563eb; border-radius: 8px; "
-                "background: #eff6ff;"
+        if not path:
+            return
+
+        p = Path(path)
+        file_size = p.stat().st_size
+        max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
+        if file_size > max_bytes:
+            size_mb = file_size / 1024 / 1024
+            QMessageBox.warning(
+                self,
+                "Plik za duży",
+                f"Wybrany plik ma {size_mb:.1f} MB.\n"
+                f"Maksymalny rozmiar to {MAX_FILE_SIZE_MB} MB.",
             )
-            self._btn_generate.setEnabled(True)
+            return
+
+        page_info = ""
+        if p.suffix.lower() == ".pdf":
+            try:
+                import pdfplumber
+                with pdfplumber.open(path) as pdf:
+                    num_pages = len(pdf.pages)
+                if num_pages > MAX_PDF_PAGES:
+                    QMessageBox.warning(
+                        self,
+                        "Za dużo stron",
+                        f"Wybrany PDF ma {num_pages} stron.\n"
+                        f"Maksymalna liczba stron to {MAX_PDF_PAGES}.",
+                    )
+                    return
+                page_info = f", {num_pages} str."
+            except Exception:
+                pass
+
+        self._file_path = path
+        short = p.name
+        size_kb = file_size / 1024
+        size_info = f"{size_kb:.0f} KB" if size_kb < 1024 else f"{size_kb / 1024:.1f} MB"
+        self._file_label.setText(f"Wybrany plik: {short}  ({size_info}{page_info})")
+        self._file_label.setStyleSheet(
+            "font-size: 13px; color: #1e293b; padding: 16px; "
+            "border: 2px solid #2563eb; border-radius: 8px; "
+            "background: #eff6ff;"
+        )
+        self._btn_generate.setEnabled(True)
 
     def _on_generate(self) -> None:
         if self._file_path:

@@ -19,8 +19,8 @@ load_dotenv(get_env_path())
 
 log = logging.getLogger(__name__)
 
-CHUNK_SIZE = 3000
-OVERLAP = 200
+CHUNK_SIZE = 1500
+OVERLAP = 150
 MAX_RETRIES = 5
 BASE_DELAY = 10  # seconds
 MODEL_NAME = "llama-3.3-70b-versatile"
@@ -63,6 +63,17 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 """)
 
 
+def _is_request_too_large(exc: RateLimitError | APIError) -> bool:
+    """413 / 'Request too large' — ponawianie nie pomoże."""
+    status = getattr(getattr(exc, "response", None), "status_code", 0)
+    if status == 413:
+        return True
+    body = getattr(exc, "body", None) or {}
+    err = body.get("error", {}) if isinstance(body, dict) else {}
+    msg = err.get("message", "") if isinstance(err, dict) else str(err)
+    return "request too large" in msg.lower()
+
+
 def _call_with_retry(client: Groq, prompt: str) -> str:
     for attempt in range(MAX_RETRIES):
         try:
@@ -75,7 +86,12 @@ def _call_with_retry(client: Groq, prompt: str) -> str:
                 ],
             )
             return (response.choices[0].message.content or "").strip()
-        except RateLimitError:
+        except RateLimitError as exc:
+            if _is_request_too_large(exc):
+                raise RuntimeError(
+                    "Tekst w jednym fragmencie jest zbyt długi dla modelu AI.\n"
+                    "Spróbuj wgrać krótszy dokument."
+                )
             if attempt < MAX_RETRIES - 1:
                 delay = BASE_DELAY * (2 ** attempt)
                 log.info("Rate limit – ponawiam za %ds (próba %d/%d)", delay, attempt + 2, MAX_RETRIES)
@@ -91,6 +107,11 @@ def _call_with_retry(client: Groq, prompt: str) -> str:
                 "Klucz uzyskasz: https://console.groq.com/keys"
             )
         except APIError as exc:
+            if _is_request_too_large(exc):
+                raise RuntimeError(
+                    "Tekst w jednym fragmencie jest zbyt długi dla modelu AI.\n"
+                    "Spróbuj wgrać krótszy dokument."
+                )
             raise RuntimeError(f"Błąd API Groq: {exc.message}")
 
     return ""
